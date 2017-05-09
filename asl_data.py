@@ -292,6 +292,18 @@ def create_hmmlearn_data(dict):
 
 if __name__ == '__main__':
     asl= AslDb()
-    print(asl.df.ix[98, 1])
+    print(asl.df.head())
+
+    df_means = asl.df.groupby('speaker').mean()
+    df_std = asl.df.groupby('speaker').std()
+
+    print(df_means.head())
+    print(df_std.head())
+
+    asl.df['mean-x'] = asl.df['left-x'] - asl.df['left-x']
+
+    #df_means = asl.df.groupby('speaker').mean()
+    #df_std = asl.df.groupby('speaker').std()
+
 
 
