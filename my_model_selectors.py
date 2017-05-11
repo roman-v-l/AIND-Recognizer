@@ -6,6 +6,7 @@ import numpy as np
 from hmmlearn.hmm import GaussianHMM
 from sklearn.model_selection import KFold
 from asl_utils import combine_sequences
+import sys
 
 
 class ModelSelector(object):
@@ -104,5 +105,67 @@ class SelectorCV(ModelSelector):
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-        # TODO implement model selection using CV
-        raise NotImplementedError
+        if len(self.lengths) == 1:
+            return self.base_model(self.n_constant)
+
+        split_method = KFold(n_splits=min(3,len(self.lengths)))
+        best_logL = -sys.maxsize - 1
+        best_n_components = 0
+        for n_components in range(self.min_n_components, self.max_n_components + 1):
+            total_logL = 0
+            count = 0
+            for cv_train_idx, cv_test_idx in split_method.split(self.sequences):
+                self.X, self.lengths = combine_sequences(cv_train_idx, self.sequences)
+                model = self.base_model(n_components)
+
+                try:
+                    if model:
+                        test_X, test_lengths = combine_sequences(cv_test_idx, self.sequences)
+                        total_logL += model.score(test_X, test_lengths)
+                        count += 1
+                except:
+                    if self.verbose:
+                        print("failure on scoring {} with {} states".format(self.this_word, n_components))
+                    continue
+
+
+            if count > 0:
+                avg_logL = total_logL / count
+                if self.verbose:
+                    print("Average Log {} with {} states".format(avg_logL, n_components))
+                if avg_logL > best_logL:
+                    best_logL = avg_logL
+                    best_n_components = n_components
+
+        self.X, self.lengths = self.hwords[self.this_word]
+        return self.base_model(best_n_components)
+
+
+if __name__ == '__main__':
+    from asl_data import AslDb
+    import timeit
+
+    asl= AslDb()
+
+    asl.df['grnd-ry'] = asl.df['right-y'] - asl.df['nose-y']
+    asl.df['grnd-rx'] = asl.df['right-x'] - asl.df['nose-x']
+    asl.df['grnd-ly'] = asl.df['left-y'] - asl.df['nose-y']
+    asl.df['grnd-lx'] = asl.df['left-x'] - asl.df['nose-x']
+
+    features_ground = ['grnd-rx', 'grnd-ry', 'grnd-lx', 'grnd-ly']
+
+    training = asl.build_training(features_ground)
+    sequences = training.get_all_sequences()
+    Xlengths = training.get_all_Xlengths()
+
+    word = 'CHICKEN'
+
+    start = timeit.default_timer()
+    model = SelectorCV(sequences, Xlengths, word,
+                       min_n_components=2, max_n_components=15, random_state=14, verbose=True).select()
+    end = timeit.default_timer() - start
+
+    if model is not None:
+        print("Training complete for {} with {} states with time {} seconds".format(word, model.n_components, end))
+    else:
+        print("Training failed for {}".format(word))
